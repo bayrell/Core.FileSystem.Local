@@ -51,6 +51,7 @@ class ModuleDescription implements ModuleDescriptionInterface
 	lambda Map<string> requiredModules() =>
 	{
 		'Runtime': '>=0.2 <1.0',
+		'Core.FileSystem': '*',
 	};
 	
 	
