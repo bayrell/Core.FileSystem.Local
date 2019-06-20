@@ -370,7 +370,7 @@ struct FileSystemProvider extends CoreStruct
 		FileSystemProvider fs,
 		string folderpath,
 		string old_name,
-		string new_nam
+		string new_name
 	)
 	{
 		bool res = false;
