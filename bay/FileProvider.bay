@@ -290,7 +290,17 @@ struct FileProvider extends CoreProvider implements FileProviderInterface
 	 * @param string path
 	 * @return int
 	 */
-	async int size(ContextInterface context, string path){}
+	async int size(ContextInterface context, string path)
+	{
+		filepath = this.chroot ~ path;
+		#switch
+		#case ifcode PHP then
+		if (!file_exists($filepath)) return 0;
+		return @filesize($filepath);
+		#case ifcode NODEJS then
+		fsModule.writeFileSync(filepath, content, {encoding : 'utf8'});
+		#endswitch
+	}
 	
 	
 	
@@ -299,7 +309,7 @@ struct FileProvider extends CoreProvider implements FileProviderInterface
 	 * @param string path
 	 * @return bool
 	 */
-	async bool save(ContextInterface context, string path, Collection<bytes> bytes)
+	async bool save(ContextInterface context, string path, Collection<bytes> bytes, int offset = 0, int length = -1)
 	{
 		filepath = this.chroot ~ path;
 		#switch
@@ -317,12 +327,30 @@ struct FileProvider extends CoreProvider implements FileProviderInterface
 	 * @param string path
 	 * @return Collection<bytes>
 	 */
-	async Collection<bytes> read(ContextInterface context, string path)
+	async Collection<bytes> read(ContextInterface context, string path, int offset = 0, int length = -1)
 	{
 		filepath = this.chroot ~ path;
 		#switch
 		#case ifcode PHP then
-		return file_get_contents($filepath);
+		
+		if (!file_exists($filepath)) return null;
+		
+		$f = fopen($filepath, "rb");
+		if ($f)		
+		{
+			$size = filesize($filepath);
+			if ($offset < 0) $offset = $length + $offset;
+			if ($length < 0) $length = $size - $offset;
+			fseek($f, $offset);
+			$c = fread($f, $length); 
+			$bytes = unpack("C*", $c);
+			$bytes = Collection::create($bytes);
+			$count = $bytes->count();
+			$eof = feof($f);
+			fclose($f);
+		}
+		
+		return $bytes;
 		#case ifcode NODEJS then
 		return fsModule.readFileSync(filepath, {encoding : charset}).toString();
 		#endswitch
