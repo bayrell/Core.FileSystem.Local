@@ -16,12 +16,12 @@
  *  limitations under the License.
  */
 
-namespace Core.FileSystem.Provider;
+namespace Core.FileSystem.Local;
 
-use Runtime.Provider;
+use Runtime.Annotations.Provider;
 use Runtime.Interfaces.ContextInterface;
 use Runtime.Interfaces.ModuleDescriptionInterface;
-use Core.FileSystem.Provider.FileSystemProvider;
+use Core.FileSystem.Local.FileProvider;
 
 
 class ModuleDescription implements ModuleDescriptionInterface
@@ -74,7 +74,7 @@ class ModuleDescription implements ModuleDescriptionInterface
 	 */
 	lambda Collection<CoreStruct> entities() => 
 	[
-		new Provider{"name": "default.fs", "value": classof FileSystemProvider},
+		new Provider{"name": "Core.FileSystem.FileProviderInterface", "value": classof FileProvider},
 	];
 	
 	

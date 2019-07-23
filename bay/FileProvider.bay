@@ -1,0 +1,461 @@
+/*!
+ *  Bayrell Core Library
+ *
+ *  (c) Copyright 2018-2019 "Ildar Bikmamatov" <support@bayrell.org>
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+namespace Core.FileSystem.Local;
+
+use Runtime.CoreProvider;
+use Core.FileSystem.FileIOResult;
+use Core.FileSystem.FileNode;
+use Core.FileSystem.FileProviderInterface;
+
+
+#switch
+#case ifcode NODEJS then
+var fsModule = require('fs');
+var shellModule = require('shelljs');
+var upathModule = require('upath');
+var pathModule = require('path');
+#endswitch
+
+
+struct FileProvider extends CoreProvider implements FileProviderInterface
+{
+	
+	string chroot = "";
+	
+	
+	/**
+	 * Returns files and folders from directory
+	 * @param string path
+	 * @return Collection<string> - Result
+	 */
+	async Collection<FileNode> getDirectoryListing(ContextInterface context, string path="/")
+	{
+		string basedir = this.chroot ~ path;
+		#switch
+		#case ifcode PHP then
+		$arr = scandir($basedir, SCANDIR_SORT_ASCENDING);
+		if ($arr == false) $arr = [];
+		$res = new Vector();
+		$res->_assignArr($arr);
+		$res->removeValue(".");
+		$res->removeValue("..");
+		$res = $res->map(
+			function($name) use ($basedir)
+			{
+				$kind = "file";
+				if (is_dir($basedir . "/" . $name)) $kind = "folder";
+				return new \Core\FileSystem\FileNode
+				(
+					new \Runtime\Dict([
+						"kind"=>$kind,
+						"name"=>$name,
+					])
+				);
+			} 
+		);
+		return $res->toCollection();
+		#case ifcode NODEJS then
+		var res = new Vector();
+		var arr = fsModule.readdirSync(basedir);
+		arr = arr.sort();
+		arr.forEach(
+			(name) => {
+				var kind = "file";
+				var is_dir = fsModule.lstatSync(basedir + "/" + name).isDirectory();
+				if (is_dir) kind = "folder";
+				res.push( new Core.FileSystem.FileNode( new Runtime.Dict({
+					"kind": kind,
+					"name": name,
+				}) ) );
+			}
+		);
+		return res.toCollection();
+		#endswitch
+	}
+	
+	
+	
+	/**
+	 * Create new folder
+	 * @param string folderpath
+	 * @return bool
+	 */
+	async bool createFolder(ContextInterface context, string folderpath, bool recursive = false)
+	{
+		folderpath = this.chroot ~ folderpath;
+		#switch
+		#case ifcode PHP then
+		if (!file_exists($folderpath))
+		{
+			mkdir($folderpath, 0755, $recursive);
+		}
+		return true;
+		
+		#case ifcode NODEJS then
+		if (fsModule.existsSync(folderpath))
+			return true;
+		
+		shellModule.mkdir('-p', folderpath);
+		#endswitch
+		
+		return false;
+	}
+	
+	
+	
+	/**
+	 * Create new file
+	 * @param string path
+	 * @param bool clear
+	 * @return bool
+	 */
+	async bool createFile(ContextInterface context, string filepath, bool clear = false)
+	{
+		filepath = this.chroot ~ filepath;
+		bool res = false;
+		
+		#switch
+		#case ifcode PHP then
+		$mode = "a";
+		if ($clear) $mode = "w";
+		$f = fopen($filepath, $mode);
+		if ($f)
+		{
+			$res = true;
+			fclose($f);
+		}
+		#endswitch
+		
+		return res;
+	}
+	
+	
+	
+	/**
+	 * Rename file or folder
+	 * @param string path
+	 * @param string new_name
+	 * @return bool
+	 */
+	async bool rename(ContextInterface context, string file_path, string new_name)
+	{
+		file_path = this.chroot ~ file_path;
+		bool res = false;
+		
+		#switch
+		#case ifcode PHP then
+		if (!file_exists($file_path)) return false;
+		$folder_path = dirname($file_path);
+		$old_name = basename($file_path);
+		$res = rename($folder_path . "/" . $old_name, $folder_path . "/" . $new_name);
+		#endswitch
+		
+		return res;
+	}
+	
+	
+	
+	/**
+	 * Delete file
+	 * @param string path
+	 * @param string recursive
+	 * @return bool
+	 */
+	async bool delete(ContextInterface context, string path, string recursive = false)
+	{
+		path = this.chroot ~ path;
+		bool res = false;
+		
+		#switch
+		#case ifcode PHP then
+		if (!file_exists($path)) return false;
+		
+		if (is_dir($path))
+		{
+			if ($recursive)
+			{
+				$res = static::removeFolderRecursive($path);
+			}
+			else
+			{
+				$res = @rmdir($path);
+			}
+		}
+		else
+		{
+			$res = unlink($path);
+		}
+		
+		#endswitch
+		
+		return res;
+	}
+	
+	
+	#switch
+	#case ifcode PHP then
+	public static function removeFolderRecursive($dir)
+	{ 
+		$files = scandir( $dir, SCANDIR_SORT_ASCENDING );
+		$files = array_filter( $files, function ($item) { return $item != "." && $item != ".."; } );
+		foreach ($files as $file)
+		{
+			$file_path = $dir . "/" . $file;
+			if (is_dir($file_path))
+			{
+				static::removeFolderRecursive($file_path);
+			}
+			else
+			{
+				@unlink($file_path);
+			}
+		}
+		$res = @rmdir($dir);
+		return $res;
+	}
+	#endswitch
+	
+	
+	
+	/**
+	 * Returns true if directory
+	 * @param string path
+	 * @return bool
+	 */
+	async bool isDir(ContextInterface context, string path)
+	{
+		path = this.chroot ~ path;
+		#switch
+		#case ifcode PHP then
+		return is_dir($path);
+		#case ifcode NODEJS then
+		return fsModule.lstatSync(path).isDirectory();
+		#endswitch
+	}
+	
+	
+	
+	/**
+	 * Returns true if file
+	 * @param string path
+	 * @return bool
+	 */
+	async bool isFile(ContextInterface context, string path)
+	{
+		path = this.chroot ~ path;
+		if (not this.fileExists(path)) return false;
+		return not this.isDir(path);
+	}
+	
+	
+	
+	/**
+	 * Returns true if exists
+	 * @param string path
+	 * @return bool
+	 */
+	async bool isExists(ContextInterface context, string path)
+	{
+		filepath = this.chroot ~ filepath;
+		#switch
+		#case ifcode PHP then
+		return file_exists($filepath);
+		#case ifcode NODEJS then
+		if (fsModule.existsSync(filepath))
+			return true;
+		return false;
+		#endswitch
+	}
+	
+	
+	
+	/**
+	 * Returns file size
+	 * @param string path
+	 * @return int
+	 */
+	async int size(ContextInterface context, string path){}
+	
+	
+	
+	/**
+	 * Save file
+	 * @param string path
+	 * @return bool
+	 */
+	async bool save(ContextInterface context, string path, Collection<bytes> bytes)
+	{
+		filepath = this.chroot ~ path;
+		#switch
+		#case ifcode PHP then
+		file_put_contents($filepath, $content);
+		#case ifcode NODEJS then
+		fsModule.writeFileSync(filepath, content, {encoding : 'utf8'});
+		#endswitch
+	}
+	
+	
+	
+	/**
+	 * Read file
+	 * @param string path
+	 * @return Collection<bytes>
+	 */
+	async Collection<bytes> read(ContextInterface context, string path)
+	{
+		filepath = this.chroot ~ path;
+		#switch
+		#case ifcode PHP then
+		return file_get_contents($filepath);
+		#case ifcode NODEJS then
+		return fsModule.readFileSync(filepath, {encoding : charset}).toString();
+		#endswitch
+	}
+	
+	
+	
+	
+	
+	/**
+	 * Open file
+	 * @param string filepath
+	 * @param string mode
+	 * @return FileInterface
+	 */
+	public async FileInterface openFile1
+	(
+		ContextInterface context,
+		string filepath="",
+		string mode=""
+	)
+	{
+		filepath = this.chroot ~ filepath;
+	}
+	
+	
+	
+	
+	/**
+	 * Read string from file
+	 * @param string filepath
+	 * @param int offset
+	 * @param int count
+	 * @return FileIOResult
+	 */
+	public async FileIOResult readBlock1
+	(
+		ContextInterface context,
+		string filepath,
+		int offset,
+		int count = -1
+	)
+	{
+		filepath = this.chroot ~ filepath;
+		string content = "";
+		Collection<byte> bytes = null;
+		int size = 0;
+		bool eof = true;
+		if (count == -1) count = 1048576;
+		
+		#switch
+		#case ifcode PHP then
+		
+		$f = fopen($filepath, "rb");
+		if ($f)		
+		{
+			$size = filesize($filepath);
+			fseek($f, $offset);
+			$c = fread($f, $count); 
+			$bytes = unpack("C*", $c);
+			$bytes = Collection::create($bytes);
+			$count = $bytes->count();
+			$eof = feof($f);
+			fclose($f);
+		}
+		
+		#case ifcode NODEJS then
+		#endswitch
+		
+		return new FileIOResult
+		{
+			"kind": FileIOResult::KIND_READ_BINARY,
+			"name": filepath,
+			"offset": offset,
+			"bytes": bytes,
+			"count": count,
+			"size": size,
+			"eof": eof,
+		};
+	}
+	
+	
+	
+	/**
+	 * Read string from file
+	 * @param string filepath
+	 * @param int offset
+	 * @param int count
+	 * @return FileIOResult
+	 */
+	public async FileIOResult writeBlock1
+	(
+		ContextInterface context,
+		string filepath,
+		Collection<byte> bytes,
+		int offset,
+		int count = -1
+	)
+	{
+		filepath = this.chroot ~ filepath;
+		if (count == -1) count = 1048576;
+		
+		#switch
+		#case ifcode PHP then
+		
+		$f = fopen($filepath, "cb+");
+		if ($f)		
+		{
+			$arr = $bytes->_getArr();
+			$sz = count($arr);
+			if ($sz > $count) $arr = array_slice($arr, 0, $count);
+			
+			fseek($f, $offset);
+			$count = count($arr);
+			$content = pack("C*", ...$arr);
+			/*var_dump($count);*/
+			fwrite($f, $content);
+			fclose($f);
+		}
+		
+		#case ifcode NODEJS then
+		#endswitch
+		
+		return new FileIOResult
+		{
+			"kind": FileIOResult::KIND_WRITE_BINARY,
+			"name": filepath,
+			"offset": offset,
+			"bytes": bytes,
+			"count": count,
+			"size": 0,
+			"eof": false,
+		};
+	}
+	
+}
